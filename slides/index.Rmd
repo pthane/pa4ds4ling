@@ -1,0 +1,230 @@
+---
+title: "Programming Assignment 4"
+subtitle: "⚔<br/>with xaringan"
+author: "Patrick Thane*"
+institute: "Rutgers University"
+date: "March 7, 2021"
+output:
+  xaringan::moon_reader:
+    lib_dir: libs
+    nature:
+      highlightStyle: github
+      highlightLines: true
+      countIncrementalSlides: false
+
+---
+
+```{r, setup, echo = FALSE, message = FALSE, warning = FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+options(scipen = 999)
+
+library(tidyverse)
+library(base)
+library(knitr)
+library(kableExtra)
+library(ds4ling)
+library(xaringan)
+library(patchwork)
+library(sjPlot)
+```
+
+```{r, load-data}
+Raw_Fricatives <- read.csv("../data_raw/fricatives.csv")
+```
+
+```{r, tidy-data}
+Tidy_Fricatives <- Raw_Fricatives %>% 
+  pivot_longer(c("s_cog", "s_skewness", "sh_cog", "sh_skewness"), names_to = "class", values_to = "hz") %>% 
+  separate("class", into = c("phoneme", "metric"), sep = "_") %>% 
+  pivot_wider(names_from = "metric", values_from = "hz")
+```
+
+```{r, clean-column-names}
+Tidy_Fricatives <- Tidy_Fricatives %>% 
+  rename(., c("COG" = "cog"),
+         c("Phoneme" = "phoneme"),
+         c("Skewness" = "skewness"),
+         c("Observation" = "obs"))
+
+write_csv(Tidy_Fricatives, "../data_tidy/tidy fricatives.csv")
+```
+
+```{r, descriptive-stats}
+Descriptive_Fricatives <- Tidy_Fricatives %>% 
+  group_by(Phoneme) %>% 
+  summarize(Mean_COG = mean(COG), SD_COG = sd(COG), Mean_Skewness = mean(Skewness), SD_Skewness = sd(Skewness))
+```
+
+# Descriptive Statistics
+```{r, kable}
+kable(Descriptive_Fricatives[1:5])
+```
+
+---
+# Summary of COG by Phoneme (extra)
+```{r, stat-summary-COG}
+Tidy_Fricatives %>%
+  ggplot(aes(x = Phoneme, y = COG)) +
+  stat_summary(aes(x = Phoneme, y = Skewness), data = Tidy_Fricatives, geom = "pointrange")
+  labs(x = "Phoneme", y = "Average center of gravity across trials", title = "Summary of Center of Gravity by Phoneme") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+---
+```{r, stat-summary-skewness}
+Tidy_Fricatives %>%
+  ggplot(aes(x = Phoneme, y = Skewness)) +
+  stat_summary(aes(x = Phoneme, y = Skewness), data = Tidy_Fricatives, geom = "pointrange")
+  labs(x = "Phoneme", y = "Average skewness across trials", title = "Summary of Skewness by Phoneme") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+---
+# Center of Gravity as a Function of Phoneme
+```{r, boxplot-cog, fig.retina = 2}
+Tidy_Fricatives %>%
+  ggplot(aes(x = Phoneme, y = COG)) +
+  geom_boxplot() +
+  labs(x = "Phoneme", y = "Average center of gravity across trials", title = "Average Center of Gravity by Phoneme") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+---
+# Skewness as a Function of Phoneme
+```{r, boxplot-skewedness, fig.retina = 2}
+Tidy_Fricatives %>%
+  ggplot(aes(x = Phoneme, y = Skewness)) +
+  geom_boxplot() +
+  labs(x = "Phoneme", y = "Average skewness across trials", title = "Average Skewness by Phoneme") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+---
+```{r, original-model}
+S_Model_Fricatives <- Tidy_Fricatives %>% 
+  filter(., Phoneme == "s")
+```
+
+# COG as a Function of Skewness, /s/
+```{r, plot-original-model, fig.retina = 2}
+S_Model_Graph <- S_Model_Fricatives %>% 
+  ggplot(aes(x = Skewness, y = COG)) +
+  geom_point() +
+  geom_smooth(method = lm) +
+  labs(x = "Skewness", y = "Center of gravity", title = "Center of Gravity as a Function of Skewness for /s/", caption = "Figure 5") +
+    theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r, show-plot-original-model, fig.retina = 2}
+(S_Model_Graph)
+```
+
+---
+```{r, program-regression}
+S_Model_Regression <- lm(COG ~ Skewness, data = S_Model_Fricatives)
+```
+
+# Summary of Statistical Model
+```{r, tab-model}
+tab_model(S_Model_Regression)
+```
+
+---
+# Diagnostics (Initial Model)
+```{r, diagnostics-initial, fig.retina = 2}
+ds4ling::diagnosis(S_Model_Regression)
+```
+
+---
+# Cook's Distance (Initial Model)
+
+```{r, cooks-model}
+Cooks_Fricatives = cooks.distance(S_Model_Regression)
+```
+
+```{r, plot-cooks-distance, fig.retina = 2}
+plot(Cooks_Fricatives)
+```
+
+---
+# Initial Findings
+
+- The present analysis provided insight into how a participant produced 10 trials of the voiceless alveolar fricative /s/ and 10 trials of the voiceless postalveolar fricative /ʃ/. Specifically, the center of gravity and skewness for each trial was reported in Hertz. However, an analysis of Cook's Distance shows that trials #1 and #20 were not within the standard error of the other trials.
+- Therefore, I computed a revised model for the data with the voiceless alveolar fricative /s/ after eliminating these influential data points.
+
+---
+# Summary of Revised Model
+
+```{r, create-tidier-model}
+Tidier_Fricatives = Tidy_Fricatives %>% 
+  filter(., Observation > 1)
+
+Tidier_Fricatives = Tidier_Fricatives %>% 
+  filter(., Observation < 20)
+
+S_Modified_Regression <- lm(COG ~ Skewness, data = Tidier_Fricatives)
+```
+
+```{r, print-modified-model}
+tab_model(S_Modified_Regression)
+```
+
+---
+# Plot of Modified Model
+```{r, plot-modified-model, fig.retina = 2}
+S_Model_Revised_Graph <- Tidier_Fricatives %>% 
+  ggplot(aes(x = Skewness, y = COG)) +
+  geom_point() +
+  geom_smooth(method = lm) +
+  labs(x = "Skewness", y = "Center of gravity", title = "Center of Gravity as a Function of Skewness for /s/") +
+    theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r, show-modified-plot, fig.retina = 2}
+(S_Model_Revised_Graph)
+```
+
+---
+# Diagnostics for Revised Model
+```{r, diagnostics-revised-model, fig.retina = 2}
+ds4ling::diagnosis(S_Modified_Regression)
+```
+
+---
+# Cook's Distance (Revised Model)
+```{r, cooks-revised}
+Cooks_Modified_Fricatives = cooks.distance(S_Modified_Regression)
+```
+
+```{r, plot-cooks-revised, fig.retina = 2}
+plot(Cooks_Modified_Fricatives)
+```
+
+---
+# Comparison of Models
+```{r, graph-side-by-side, fig.retina = 2}
+(S_Model_Graph) / (S_Model_Revised_Graph)
+```
+
+---
+# Summary of Final Findings
+
+Following Chodroff and Wilson (2019), *center of gravity* is the magnitude-weighted mean in Hertz of spectral frequencies in the production of fricative consonants. Relatedly, Jongman et al. (2000) describe that *skewness* is a measure of the concentration of acoustic energy across the production of a fricative consonant in Hertz. An initial bivariate linear model comparing 20 trials of the production of the voiceless alveolar fricative /s/ revealed a positive correlation between center of gravity and skewness, as reflected above. An analysis of Cook's distance revealed two influential data points whose acoustic correlates fell well outside of the range of the other observations, suggesting an error in the measurement of these values; a revised model was generated and run to evaluate these data. Importantly, the revised model revealed a *negative* correlation between skewness and center of gravity based upon the eighteen observations submitted for the second analysis. The preceding slide summarizes the contrast between the initial model with all observations and the revised model with the eighteen remaining observations.
+
+---
+# Give Credit Where Credit Is Due
+
+- I would like to thank Kyle for helping me to think through the assignment.  I am lucky that he is one of my closest friends and a fantastic colleague.  He contributed code for data manipulation and helped with the identification of outliers in the dataset and plotting Cook's distance to demonstrate the influential data points.
+
+- I was happy I was able to work with Diana and Kaylee again on this project.  We worked collaboratively together, and then I re-coded some elements of the project after speaking with Kyle.  I shared these revisions with them.  I also helped both of them to activate the ds4ling context.
+
+- Kaylee came up with the code for the stat summary plots.  We decided to include them as well because they are a nice visualization of the summaries that we generated.  The more, the merrier (at least as far as coding practice is concerned).
+
+- My sources are cited on the following slide.
+
+---
+# Works Cited
+
+Chodroff, E. & Wilson, C. (2019). Acoustic–phonetic and auditory mechanisms of adaptation in the perception of sibilant fricatives. *Attention, Perception, and Psychophysics*, *82*, 2027-2048.
+
+Jongman, A., Wayland, R., & Wong, S. (2000). Acoustic characteristics of English fricatives. *Journal of the Acoustic Society of America*, *108*(3), 1252-1263.
